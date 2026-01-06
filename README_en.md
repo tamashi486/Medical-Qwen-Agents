@@ -14,32 +14,7 @@ Going beyond simple Prompt Engineering, this project connects the full technolog
 
 ## 🏗️ System Architecture
 
-```mermaid
-graph TD
-    User[User Terminal] <--> |WebSocket/HTTP| Gateway[FastAPI Async Gateway]
-    
-    subgraph "Agent Orchestration"
-        Gateway --> Router{Intent Router}
-        Router --> |Chit-chat/General| LLM_Direct[Direct Mode]
-        Router --> |Medical Consult| Agent_Core[Agent Core Loop]
-        
-        Agent_Core <--> Memory[Hierarchical Memory]
-        Agent_Core --> |Draft| Auditor[🛡️ Medical Auditor]
-        Auditor --> |Critique| Refiner[Self-Correction Config]
-    end
-    
-    subgraph "RAG Engine"
-        Agent_Core --> |Query| Rewrite[Query Rewrite]
-        Rewrite --> HybridSearch["Hybrid Search (BM25 + Vector)"]
-        HybridSearch --> Rerank[BGE-Reranker]
-        Rerank --> Context[Medical Evidence Chain]
-    end
-
-    subgraph "Model Layer"
-        LLM_Direct & Agent_Core & Refiner --> |OpenAI Compatible API| vLLM_Engine[vLLM Inference Engine]
-        vLLM_Engine -- Load --> Qwen_Weights["Qwen3-32B (SFT + DPO)"]
-    end
-```
+![Architecture](./assets/diagram_en.png)
 
 ## 🌟 Core Modules
 

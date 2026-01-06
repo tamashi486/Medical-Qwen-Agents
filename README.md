@@ -14,32 +14,7 @@
 
 ## 🏗️ 系统架构
 
-```mermaid
-graph TD
-    User[用户终端] <--> |WebSocket/HTTP| Gateway[FastAPI 异步网关]
-    
-    subgraph "Agent Orchestration (逻辑编排层)"
-        Gateway --> Router{意图分诊}
-        Router --> |闲聊/通用| LLM_Direct[直通模式]
-        Router --> |医疗咨询| Agent_Core[Agent 核心回路]
-        
-        Agent_Core <--> Memory[多级记忆系统]
-        Agent_Core --> |Draft| Auditor[🛡️ 医疗审核员]
-        Auditor --> |Critique| Refiner[自修正模块]
-    end
-    
-    subgraph "RAG Engine (知识增强层)"
-        Agent_Core --> |Query| Rewrite[查询改写]
-        Rewrite --> HybridSearch["混合检索 (BM25 + Vector)"]
-        HybridSearch --> Rerank[BGE-Reranker 重排序]
-        Rerank --> Context[医学证据链构建]
-    end
-
-    subgraph "Model Layer (基座模型层)"
-        LLM_Direct & Agent_Core & Refiner --> |OpenAI Compatible API| vLLM_Engine[vLLM 推理引擎]
-        vLLM_Engine -- 加载 --> Qwen_Weights["Qwen3-32B (SFT + DPO)"]
-    end
-```
+![Architecture](./assets/diagram_zh.png)
 
 ## 🌟 核心技术模块
 
