@@ -1,0 +1,29 @@
+{
+  "huatuo_train": {
+    "file_name": "train.jsonl",
+    "columns": {
+      "prompt": "instruction",
+      "query": "input",
+      "response": "output"
+    }
+  },
+  "huatuo_test": {
+    "file_name": "test.jsonl",
+    "columns": {
+      "prompt": "instruction",
+      "query": "input",
+      "response": "output"
+    }
+  },
+  "huatuo_dpo": {
+    "file_name": "dpo.jsonl",
+    "ranking": true,
+    "formatting": "alpaca",
+    "columns": {
+      "instruction": "instruction",
+      "input": "input",
+      "chosen": "chosen",
+      "rejected": "rejected"
+    }
+  }
+}

@@ -1,0 +1,27 @@
+# Models and Weights
+models/
+weights/
+*.safetensors
+*.bin
+*.pt
+*.pth
+
+# Large Datasets
+Medical-LLM/dataset/data/dpo.jsonl
+Medical-LLM/dataset/data/train.jsonl
+Medical-LLM/dataset/huatuoqa-dataset/train_datasets.jsonl
+*.jsonl
+
+# Python
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.env
+
+# LLaMA Factory artifacts
+LLaMA-Factory/output/
+LLaMA-Factory/runs/
+
+# IDE
+.vscode/
+.idea/
