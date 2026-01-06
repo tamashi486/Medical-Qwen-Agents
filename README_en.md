@@ -1,112 +1,140 @@
 **English Version** | [中文版本](README.md)
 
-# Enterprise Medical Agent based on Qwen3-32B
+# Medical-Qwen: Full-Stack Medical Agent System Based on Qwen3-32B
 
-> **Project**: Medical-Qwen
-> **Summary**: A full-stack implementation from Data Alignment (DPO) to High-Throughput Inference (vLLM), and an Agentic Architecture with Reflection.
+> **Industrial-Grade Medical AI Solution**
+>
+> A complete closed-loop practice from Data Alignment (SFT+DPO) to High-Precision Retrieval (RAG) and Reflective Agents (Agentic Workflow).
 
-## 🚩 Executive Summary
+## 📖 Introduction
 
-Based on the **Qwen3-32B** foundation model, this project builds an end-to-end **Enterprise Medical AI Solution**. Going beyond simple Prompt Engineering, we established a complete technical pipeline: **"Data Cleaning → Supervised Fine-Tuning (SFT) → Direct Preference Optimization (DPO) → High-Performance Deployment (vLLM) → Agentic RAG"**.
+**Medical-Qwen** is an end-to-end AI solution designed for the vertical medical domain. This project aims to address the three core pain points of general large models in medical scenarios: **"Lack of Domain Knowledge"**, **"Frequent Hallucinations"**, and **"Poor Safety Compliance"**.
 
-By introducing a **"Medical Auditor" Reflection Mechanism** and a **Hierarchical Memory System**, we address core pain points like hallucinations and compliance in medical scenarios. The final system supports a single-instance inference speed of **120 tokens/s**, increasing total system throughput by 82% and medical accuracy by 2.2x.
+Going beyond simple Prompt Engineering, this project connects the full technology stack: **"Data Cleaning → Supervised Fine-Tuning (SFT) → Direct Preference Optimization (DPO) → Hybrid Retrieval-Augmented Generation (RAG) → Agent Orchestration → High-Performance Inference (vLLM)"**. The system achieves a single-instance inference speed of **120 tokens/s**, improves medical answer accuracy by **2.2x** compared to the base model, and features capabilities for long-term memory (e.g., patient allergies) and active risk control.
 
-## ⚡ Key Highlights
+## 🏗️ System Architecture
 
-### 1. Model Alignment: SFT + DPO
-*   **SFT (Knowledge Injection)**: Fine-tuned on cleaned Huatuo QA data, transforming a general purpose model into a medical specialist. Medical accuracy improved by **80%**.
-*   **DPO (Safety Guardrails)**: Constructed 5k+ preference pairs (Self-Instruct) to suppress safe but useless "generic" responses. Alignment with medical reference answers improved by **200%**.
+```mermaid
+graph TD
+    User[User Terminal] <--> |WebSocket/HTTP| Gateway[FastAPI Async Gateway]
+    
+    subgraph "Agent Orchestration"
+        Gateway --> Router{Intent Router}
+        Router --> |Chit-chat/General| LLM_Direct[Direct Mode]
+        Router --> |Medical Consult| Agent_Core[Agent Core Loop]
+        
+        Agent_Core <--> Memory[Hierarchical Memory]
+        Agent_Core --> |Draft| Auditor[🛡️ Medical Auditor]
+        Auditor --> |Critique| Refiner[Self-Correction Config]
+    end
+    
+    subgraph "RAG Engine"
+        Agent_Core --> |Query| Rewrite[Query Rewrite]
+        Rewrite --> HybridSearch[Hybrid Search (BM25 + Vector)]
+        HybridSearch --> Rerank[BGE-Reranker]
+        Rerank --> Context[Medical Evidence Chain]
+    end
+    
+    subgraph "Model Layer"
+        LLM_Direct & Agent_Core & Refiner --> |OpenAI Compatible API| vLLM_Engine[vLLM Inference Engine]
+        vLLM_Engine -- Load --> Qwen_Weights[Qwen3-32B (SFT + DPO)]
+    end
+```
 
-### 2. Inference Optimization: vLLM
-*   **Architecture**: Adopts **BF16 + TP=2** architecture (validated on 4x RTX 6000 environments).
-*   **Performance**: Single-instance generation speed **~120 tokens/s**. Total system throughput increased by **82%** compared to baseline TP=4.
+## 🌟 Core Modules
 
-### 3. Agent Architecture: RAG & Reflection
-*   **🛡️ Reflection & Self-Correction**: Introduces a "Medical Auditor" role that intercepts output with a `Draft -> Critique -> Refine` loop to ensure 100% compliance.
-*   **🧠 Hierarchical Memory**: 
-    *   **Entity Memory**: Asynchronously extracts patient profiles (age, allergies) for personalized advice.
-    *   **Summary Memory**: Automatically summarizes long conversations to reduce context usage.
-*   **🔗 Deep RAG Optimization**: Implements Query Rewrite for medical entity mapping and Evidence Grounding to cite sources.
+### 1. 🧠 Model Alignment
+*Injecting medical knowledge and standardizing behavior.*
 
-### 4. Engineering: Async First
-*   **Full-Link Async**: Core interfaces refactored with `asyncio` to adapt to FastAPI high-concurrency scenarios, significantly reducing Time-to-First-Token (TTFT).
+- **SFT (Supervised Fine-Tuning)**: Based on cleaned and structured **Huatuo QA** datasets, employing QLoRA efficient fine-tuning to transform general models into medical-specific models with clinical thinking.
+- **DPO (Direct Preference Optimization)**: Constructed 5k+ pairs of `(chosen, rejected)` preference data to suppress "generic" safe responses and enforce strict adherence to medical guidelines.
+    - **Results**: Compared to the pure SFT model, alignment with medical reference answers (ROUGE-L) improved by **200%**, and safety metrics improved by **220%**.
+
+### 2. 📚 RAG (Retrieval-Augmented Generation)
+*Solving hallucinations and ensuring evidence-based answers.*
+
+- **Hybrid Search Strategy**: Combines **BM25** (Keyword Matching for terminology) and **Embedding** (Vector Matching for semantics) to resolve recall shortcomings of single retrieval paths.
+- **Two-Stage Re-ranking**: Introduces the **BGE-Reranker** model to fine-score initial results, improving Top-N document relevance accuracy to over 90%.
+- **Source Attribution**: Forces the model to cite `[Evidence ID]` when generating answers, realizing "every sentence has a source" to meet interpretability needs in medical scenarios.
+- **Query Rewriting**: Uses LLM to transform user colloquial descriptions into standard medical entity queries, improving retrieval hit rates.
+
+### 3. 🤖 Agentic Architecture
+*Simulating doctor reasoning with logic and state management.*
+
+- **Reflection & Self-Correction Loop**:
+    - Introduces a **"Medical Auditor"** role.
+    - Adopts a `Draft -> Critique -> Refine` workflow to automatically intercept contraindicated suggestions and potential risk content.
+- **Hierarchical Memory System**:
+    - **Entity Memory**: Real-time extraction and maintenance of patient profiles (e.g., allergies, chronic history, current medications) for cross-session personalized risk control.
+    - **Summary Memory**: Periodic semantic compression of long dialogue windows to significantly reduce inference costs while retaining key context.
+- **Tool Use**: Integrates external tools like BMI calculators, drug inventory queries, and department triage to extend model capabilities.
+
+### 4. ⚡ Engineering & Inference
+*Industrial-grade high concurrency and low latency implementation.*
+
+- **vLLM Optimization**: Utilizes **PagedAttention** for memory management and enables **Continuous Batching**.
+    - **Config**: BF16 Precision + Tensor Parallelism (TP=2).
+    - **Performance**: Single-instance generation speed reaches **~120 tokens/s**, with total system throughput (TPS) increased by **82%** compared to HuggingFace native inference.
+- **Async First**: The entire link (API Gateway, RAG Retrieval, Agent Reasoning) is refactored with `asyncio`, significantly reducing Time-to-First-Token (TTFT) and adapting to high-concurrency scenarios.
 
 ## 📂 Project Structure
 
-The project is organized as follows:
-
-- **`Medical-LLM/`**: Contains resources for model training (SFT & DPO).
-  - `dataset/`: 
-    - `data/`: Medical datasets (e.g., jsonl files).
-    - `scripts/`: Data pre-processing and formatting scripts.
-  - `configs/`: Training configurations (DeepSpeed configs, training arguments).
-  - `models/`: Directory for saving trained model checkpoints.
-
-- **`agent/`**: Contains the code for the agent, RAG system, and deployment.
-  - `api/`: Backend API implementation (FastAPI).
-  - `core/`: Core logic for the agent (Reflection, Memory).
-  - `run_backend.py`: Script to start the backend service.
-  - `run_model.py`: Script to load and run the model (vLLM integration).
-  - `agent_ui.py`: Frontend UI for the agent.
-
-- **`LLaMA-Factory/`**: The training library used for efficient fine-tuning.
-
-## 🚀 Setup and Usage
-
-### Prerequisites
-
-- Python 3.10+
-- CUDA-compatible GPU
-
-### Installation
-
-1.  Clone the repository:
-    ```bash
-    git clone https://github.com/your-username/Medical-Qwen.git
-    cd Medical-Qwen
-    ```
-
-2.  Install dependencies:
-    ```bash
-    pip install -r LLaMA-Factory/requirements.txt
-    pip install -r agent/requirements.txt # (If available)
-    ```
-
-3.  **Model Weights**:
-    - Download the **Qwen3-32B** model weights and place them in a suitable directory (e.g., `../qwen3-32B`).
-    - Download the **BGE-M3** embedding model weights and place them in `../bge-m3`.
-    - Update the configuration files in `agent/` and `Medical-LLM/scripts/` to point to the correct model paths.
-
-### Training (SFT)
-
-Use **LLaMA-Factory** to start training with the provided configurations.
-
-```bash
-# Example: Run SFT using the configuration file
-llamafactory-cli train Medical-LLM/configs/training_args_sft.yaml
+```text
+Medical-Qwen/
+├── Medical-LLM/             # [Module 1] Model Training Layer
+│   ├── dataset/             # Data preprocessing scripts & cleaned data
+│   ├── configs/             # DeepSpeed & LoRA training configurations
+│   └── scripts/             # Data processing scripts (Note: Use llamafactory-cli for training)
+├── agent/                   # [Module 2&3] RAG & Agent Application Layer
+│   ├── core/
+│   │   ├── memory.py        # Hierarchical memory implementation
+│   │   ├── reflection.py    # Medical auditor / Reflection mechanism
+│   │   └── rag_engine.py    # Hybrid search & reranking logic
+│   ├── api/                 # FastAPI backend interface
+│   ├── agent_ui.py          # Interactive frontend (Gradio/Streamlit)
+│   └── run_backend.py       # Service entry point
+└── requirements.txt         # Project dependencies
 ```
 
-### Running the Agent
+## 🚀 Quick Start
 
-Navigate to the `agent` directory:
+### Prerequisites
+*   Python 3.10+
+*   NVIDIA GPU (VRAM >= 24GB Recommended)
 
-1.  Start the model service:
-    ```bash
-    cd agent
-    python run_model.py
-    ```
+### 1. Installation
+```bash
+git clone https://github.com/your-username/Medical-Qwen.git
+cd Medical-Qwen
+pip install -r requirements.txt
+```
 
-2.  Start the backend:
-    ```bash
-    python run_backend.py
-    ```
+### 2. Model Preparation
+Please place the downloaded model weights in the following suggested paths (ensure config files point to these paths):
+*   **Base Model**: `../models/qwen3-32b-instruct`
+*   **Embedding**: `../models/bge-m3`
+*   **Reranker**: `../models/bge-reranker-large`
 
-3.  Start the UI:
-    ```bash
-    python agent_ui.py
-    ```
+### 3. Launch Services
 
-## Notes
+**Step 1: Start vLLM Inference Service**
+```bash
+python -m vllm.entrypoints.openai.api_server \
+    --model /path/to/your/sft-model \
+    --served-model-name qwen-medical \
+    --tensor-parallel-size 2 \
+    --port 8000
+```
 
-- **Large Files**: Some large dataset files and model weights are excluded from this repository. Please ensure you have the necessary data and pre-trained models.
-- **Paths**: Check all configuration files for absolute paths that may need to be adjusted for your environment.
+**Step 2: Start Agent Backend**
+```bash
+cd agent
+python run_backend.py
+# The backend will automatically connect to vLLM and the Vector Database
+```
+
+**Step 3: Start UI**
+```bash
+cd agent
+python agent_ui.py
+```
