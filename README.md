@@ -30,14 +30,14 @@ graph TD
     
     subgraph "RAG Engine (知识增强层)"
         Agent_Core --> |Query| Rewrite[查询改写]
-        Rewrite --> HybridSearch[混合检索 (BM25 + Vector)]
+        Rewrite --> HybridSearch["混合检索 (BM25 + Vector)"]
         HybridSearch --> Rerank[BGE-Reranker 重排序]
         Rerank --> Context[医学证据链构建]
     end
-    
+
     subgraph "Model Layer (基座模型层)"
         LLM_Direct & Agent_Core & Refiner --> |OpenAI Compatible API| vLLM_Engine[vLLM 推理引擎]
-        vLLM_Engine -- 加载 --> Qwen_Weights[Qwen3-32B (SFT + DPO)]
+        vLLM_Engine -- 加载 --> Qwen_Weights["Qwen3-32B (SFT + DPO)"]
     end
 ```
 
@@ -46,7 +46,7 @@ graph TD
 ### 1. 🧠 模型训练 (Model Alignment)
 *针对医疗领域的知识注入与行为规范。*
 
-- **SFT (监督微调)**: 基于 **Huatuo QA** 数据集进行清洗与结构化重构，采用 QLoRA 高效微调，将通用模型改造为具备临床思维的医疗专用模型。
+- **SFT (监督微调)**: 基于 **Huatuo QA** 数据集进行清洗与结构化重构，采用 LoRA 高效微调，将通用模型改造为具备临床思维的医疗专用模型。
 - **DPO (直接偏好优化)**: 构建 5k+ 组 `(chosen, rejected)` 偏好数据，重点抑制“万金油”式回复，强化模型对医疗指南的遵循度。
     - **成果**: 相比纯 SFT 模型，医学参考答案对齐度 (ROUGE-L) 提升 **200%**，安全性指标提升 **220%**。
 

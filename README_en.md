@@ -30,14 +30,14 @@ graph TD
     
     subgraph "RAG Engine"
         Agent_Core --> |Query| Rewrite[Query Rewrite]
-        Rewrite --> HybridSearch[Hybrid Search (BM25 + Vector)]
+        Rewrite --> HybridSearch["Hybrid Search (BM25 + Vector)"]
         HybridSearch --> Rerank[BGE-Reranker]
         Rerank --> Context[Medical Evidence Chain]
     end
-    
+
     subgraph "Model Layer"
         LLM_Direct & Agent_Core & Refiner --> |OpenAI Compatible API| vLLM_Engine[vLLM Inference Engine]
-        vLLM_Engine -- Load --> Qwen_Weights[Qwen3-32B (SFT + DPO)]
+        vLLM_Engine -- Load --> Qwen_Weights["Qwen3-32B (SFT + DPO)"]
     end
 ```
 
@@ -46,7 +46,7 @@ graph TD
 ### 1. 🧠 Model Alignment
 *Injecting medical knowledge and standardizing behavior.*
 
-- **SFT (Supervised Fine-Tuning)**: Based on cleaned and structured **Huatuo QA** datasets, employing QLoRA efficient fine-tuning to transform general models into medical-specific models with clinical thinking.
+- **SFT (Supervised Fine-Tuning)**: Based on cleaned and structured **Huatuo QA** datasets, employing LoRA efficient fine-tuning to transform general models into medical-specific models with clinical thinking.
 - **DPO (Direct Preference Optimization)**: Constructed 5k+ pairs of `(chosen, rejected)` preference data to suppress "generic" safe responses and enforce strict adherence to medical guidelines.
     - **Results**: Compared to the pure SFT model, alignment with medical reference answers (ROUGE-L) improved by **200%**, and safety metrics improved by **220%**.
 
