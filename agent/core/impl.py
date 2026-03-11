@@ -6,18 +6,15 @@ from typing import List, Dict, Any
 
 import torch
 from langchain_openai import ChatOpenAI
-from langchain_community.vectorstores import Chroma
-from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_core.tools import tool, StructuredTool
 from langchain_classic.agents import AgentExecutor, create_tool_calling_agent
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.runnables.history import RunnableWithMessageHistory
 from langchain_community.chat_message_histories import ChatMessageHistory
 from langchain_core.messages import BaseMessage, SystemMessage, HumanMessage, AIMessage
-# from langchain.retrievers import EnsembleRetriever
-from langchain_community.retrievers import BM25Retriever 
 from langchain_core.output_parsers import StrOutputParser
 
+from RAG.retriever import MedicalRetriever
 from agent.core.interfaces import AgentInterface
 
 # 配置日志 (面试点: 可观测性)
@@ -44,7 +41,7 @@ class MedicalAgentSystem(AgentInterface):
         
         # 内部组件状态
         self.llm = None
-        self.retriever = None
+        self.rag_retriever = None
         self.agent_executor = None
         # 用于存储不同 SessionID 的聊天记录 (生产环境通常存 Redis)
         self.chat_histories: Dict[str, ChatMessageHistory] = {}
@@ -59,18 +56,11 @@ class MedicalAgentSystem(AgentInterface):
             logger.info(f"🚀 初始化系统... 设备: {self.device}")
             start_time = time.time()
 
-            # 1. Embedding & VectorDB
-            embeddings = HuggingFaceEmbeddings(
-                model_name=self.embedding_model_path, 
-                model_kwargs={'device': self.device}
+            # 1. RAG 检索器（Hybrid: Dense + BM25 + BGE-Reranker）
+            self.rag_retriever = MedicalRetriever(
+                db_path=self.db_path,
+                embedding_model_path=self.embedding_model_path,
             )
-            
-            # 使用 Chroma
-            vector_db = Chroma(persist_directory=self.db_path, embedding_function=embeddings)
-            
-            # 面试点: 转换为 Retriever，获取 Top-10 此时为了后面的 Rerank 做准备
-            # 如果没有 Rerank 模型，这里直接 K=3 也可以，但面试要说"为了召回率设大了 K"
-            self.retriever = vector_db.as_retriever(search_kwargs={"k": 10})
 
             # 2. LLM (vLLM)
             self.llm = ChatOpenAI(
@@ -86,15 +76,21 @@ class MedicalAgentSystem(AgentInterface):
             tools = [self._create_search_tool(), self._create_bmi_tool()]
 
             # 4. Prompt 设计 (面试点: Role, Constraints, Format)
+            # 修订点（基于评测结果 2026-03-11）：
+            #   - 原第2条"列出来源"描述模糊导致溯源率 0%，改为强制 [证据N] 行内标注
+            #   - 新增第5条强制禁忌覆盖规则（评测禁忌遗漏率 57.6%）
+            #   - 精简免责声明至一句，避免稀释回答相关性（AnswerRelevancy 0.324）
             prompt = ChatPromptTemplate.from_messages([
-                ("system", 
+                ("system",
                  "你是一个名为'华驼'的专业医疗AI助手。\n"
                  "【当前患者画像】\n{patient_profile}\n\n"
                  "核心原则：\n"
-                 "1. 【循证医学】回答必须严格基于工具检索到的【证据】。如果证据不足，请明确告知用户。\n"
-                 "2. 【引用来源】在回答结尾，必须列出参考的证据来源（如书籍名称）。\n"
+                 "1. 【循证医学】回答必须严格基于工具检索到的【证据】，不可凭空编造医学数据或剂量。\n"
+                 "2. 【行内引用】每处引用证据时，须在句末用 [证据N] 格式标注编号，例如：布洛芬可退热[证据1]。\n"
                  "3. 【安全合规】严禁提供具体的处方建议（如'每天吃3次'），只能提供通用的治疗方案参考。\n"
-                 "4. 【拒绝回答】对于非医疗或违法问题（如制造毒药），请直接拒绝。"),
+                 "4. 【拒绝回答】对于非医疗或违法问题（如制造毒药），请直接拒绝。\n"
+                 "5. 【禁忌强制】若检索证据中包含禁忌症、禁用人群或药物相互作用，必须在回答中完整列出，不得遗漏。\n"
+                 "6. 【免责声明】在回答末尾附一句：'以上信息仅供参考，请遵医嘱。'"),
                 MessagesPlaceholder(variable_name="chat_history"), # 记忆槽位
                 ("user", "{input}"),
                 MessagesPlaceholder(variable_name="agent_scratchpad"),
@@ -204,8 +200,11 @@ class MedicalAgentSystem(AgentInterface):
             # 1. 查询改写 (Query Rewriting)
             rewrite_prompt = (
                 f"请将用户的搜索查询 '{query}' 改写为一个更适合检索医学知识库的独立查询语句。\n"
-                "去除口语化表达，提取核心医学实体。\n"
-                "直接输出改写后的查询，不要包含其他内容。"
+                "要求：\n"
+                "- 去除口语化表达，替换为规范医学术语\n"
+                "- 保留核心医学实体（药品名、疾病名、症状名）\n"
+                "- 若涉及特殊人群，明确包含关键词（如：孕妇、儿童、老年人、肝肾功能不全）\n"
+                "- 直接输出改写后的查询，不要包含其他内容"
             )
             try:
                 rewritten_query = self.llm.invoke([HumanMessage(content=rewrite_prompt)]).content.strip()
@@ -215,27 +214,14 @@ class MedicalAgentSystem(AgentInterface):
                 rewritten_query = query
 
             logger.info(f"🔍 正在检索: {rewritten_query}")
-            
-            # 2. 检索 (Recall)
-            docs = self.retriever.invoke(rewritten_query)
-            if not docs:
-                return "知识库中未找到相关信息。"
-            
-            # 3. (模拟) 重排序 (Rerank) - 面试点
-            # 在实际大厂代码中，这里会调用 BGE-Reranker 模型对 docs 打分
-            # sorted_docs = reranker.rank(query, docs)[:3] 
-            # 这里为了代码可运行，我们简单截取前 3 个
-            final_docs = docs[:3]
 
-            # 4. 格式化输出 (带元数据) - 面试点
-            results = []
-            for i, doc in enumerate(final_docs):
-                source = doc.metadata.get('title', '未知来源')
-                category = doc.metadata.get('category', '通用')
-                content = doc.page_content.replace('\n', ' ')
-                results.append(f"[证据{i+1}] (来源: {source} | 分类: {category}):\n{content}")
-            
-            return "\n\n".join(results)
+            # 2. Hybrid 检索：Dense + BM25 → RRF → BGE-Reranker
+            results = self.rag_retriever.hybrid_retrieve(rewritten_query, top_k=5)
+            if not results:
+                return "知识库中未找到相关信息。"
+
+            # 3. Evidence-aware 格式化（高风险标注 + 来源列表）
+            return self.rag_retriever.format_evidence(results, max_results=5)
         return search_tool
 
     def _create_bmi_tool(self):
@@ -278,7 +264,8 @@ class MedicalAgentSystem(AgentInterface):
     def _reflection_check(self, user_input: str, response: str) -> str:
         """
         反思模式 (Reflection Pattern)
-        检查回答是否包含幻觉或违规
+        检查回答是否包含幻觉、违规或禁忌遗漏。
+        修订点（基于评测 2026-03-11）：新增第3条禁忌遗漏检查（评测遗漏率 57.6%）
         """
         critique_prompt = (
             f"用户问题: {user_input}\n"
@@ -286,22 +273,22 @@ class MedicalAgentSystem(AgentInterface):
             "请作为'医疗审核员'检查上述回答：\n"
             "1. 是否包含具体的处方建议（如'每天吃3次'）？(违规)\n"
             "2. 是否引用了不存在的证据？(幻觉)\n"
-            "3. 是否回答了非医疗问题但伪装成医疗建议？\n"
+            "3. 若回答涉及药物或治疗，是否遗漏了禁忌症、禁用人群或药物相互作用？(遗漏禁忌)\n"
+            "4. 是否回答了非医疗问题但伪装成医疗建议？\n"
             "如果回答安全且合规，请输出 'PASS'。\n"
-            "如果有问题，请输出具体的修改建议。"
+            "如果有问题，请输出具体的修改建议，说明哪条规则被违反。"
         )
         try:
             critique = self.llm.invoke([HumanMessage(content=critique_prompt)]).content.strip()
             if "PASS" in critique:
                 return response
-            
+
             logger.warning(f"⚠️ [Reflection] Critique triggered: {critique}")
-            # Regeneration
             fix_prompt = (
                 f"原问题: {user_input}\n"
                 f"原回答: {response}\n"
                 f"审核意见: {critique}\n"
-                "请根据审核意见重写回答，确保安全合规。"
+                "请根据审核意见重写回答，确保安全合规，并补全所有被遗漏的禁忌信息。"
             )
             new_response = self.llm.invoke([HumanMessage(content=fix_prompt)]).content
             return new_response
@@ -333,6 +320,7 @@ class MedicalAgentSystem(AgentInterface):
     async def _reflection_check_async(self, user_input: str, response: str) -> str:
         """
         反思模式 (Reflection Pattern) - 异步版
+        修订点（基于评测 2026-03-11）：新增第3条禁忌遗漏检查（评测遗漏率 57.6%）
         """
         critique_prompt = (
             f"用户问题: {user_input}\n"
@@ -340,23 +328,23 @@ class MedicalAgentSystem(AgentInterface):
             "请作为'医疗审核员'检查上述回答：\n"
             "1. 是否包含具体的处方建议（如'每天吃3次'）？(违规)\n"
             "2. 是否引用了不存在的证据？(幻觉)\n"
-            "3. 是否回答了非医疗问题但伪装成医疗建议？\n"
+            "3. 若回答涉及药物或治疗，是否遗漏了禁忌症、禁用人群或药物相互作用？(遗漏禁忌)\n"
+            "4. 是否回答了非医疗问题但伪装成医疗建议？\n"
             "如果回答安全且合规，请输出 'PASS'。\n"
-            "如果有问题，请输出具体的修改建议。"
+            "如果有问题，请输出具体的修改建议，说明哪条规则被违反。"
         )
         try:
             critique_res = await self.llm.ainvoke([HumanMessage(content=critique_prompt)])
             critique = critique_res.content.strip()
             if "PASS" in critique:
                 return response
-            
+
             logger.warning(f"⚠️ [Reflection] Critique triggered: {critique}")
-            # Regeneration
             fix_prompt = (
                 f"原问题: {user_input}\n"
                 f"原回答: {response}\n"
                 f"审核意见: {critique}\n"
-                "请根据审核意见重写回答，确保安全合规。"
+                "请根据审核意见重写回答，确保安全合规，并补全所有被遗漏的禁忌信息。"
             )
             new_response_res = await self.llm.ainvoke([HumanMessage(content=fix_prompt)])
             return new_response_res.content

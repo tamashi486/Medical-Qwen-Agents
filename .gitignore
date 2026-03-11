@@ -25,3 +25,12 @@ LLaMA-Factory/runs/
 # IDE
 .vscode/
 .idea/
+
+# md files
+qwen-rag.md
+problems.md
+README copy.md
+README_backup.md
+
+# RAG
+RAG/
